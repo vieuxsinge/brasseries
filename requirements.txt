@@ -1,0 +1,5 @@
+argparse==1.2.1
+cssselect==0.9.1
+lxml==3.3.5
+pyquery==1.2.8
+wsgiref==0.1.2
