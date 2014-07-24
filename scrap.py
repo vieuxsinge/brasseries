@@ -55,7 +55,7 @@ def geocode(address):
     if results:
         lat = float(results[0]["lat"])
         lng = float(results[0]["lon"])
-        return Point((lat, lng))
+        return Point((lng, lat))
     return None
 
 
