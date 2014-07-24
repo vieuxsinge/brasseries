@@ -3,13 +3,15 @@ from pyquery import PyQuery as pq
 
 
 class Brasserie(object):
-    def __init__(self, name, address, postal_code, city, tel, email, contact,
-                 website, creation_date, history):
+    def __init__(self, name, address, postal_code, city, tel, portable, fax,
+                 email, contact, website, bio, creation_date, history):
         self.name = name
         self.address = address
         self.postal_code = postal_code
         self.city = city
         self.tel = tel
+        self.portable = portable
+        self.fax = fax
         self.email = email
         self.contact = contact
         self.website = website
@@ -21,26 +23,20 @@ class BeerScrapper(object):
 
     url = 'http://projet.amertume.free.fr/html/liste_brasseries.htm'
 
-    def __init__(self, start, end):
+    def __init__(self):
         self.brasseries = []
 
     def scrap(self):
         """Scrap a page, put the results in the self.tracks attribute."""
+        def clean_text(txt):
+            return (txt.replace('\n', '')
+                       .replace('\t', ''))
+            # XXX Need to change encoding.
+
         d = pq(url=self.url)
-        from pdb import set_trace; set_trace()
-        for item in d.find('.cestquoicetitre_results>div').items():
-            artist = item('.artiste a').text()
-            if artist is None:
-                artist = item('.artiste').text()
-
-            title = item('.titre').text()
-            ts_class = (item('.time').parent().parent()[0]
-                        .attrib['class'].split()[0])
-            ts = ts_class.split('_')[-1]
-
-            if ts not in self.tracks:
-                track = Track(artist=artist, title=title, ts=ts)
-                self.tracks[ts] = track
+        for col in list(d.find('#table1>tr'))[1:]:
+            self.brasseries.append(
+                Brasserie(*[clean_text(c.text_content()) for c in col]))
 
 
 def render_geojson(brasseries):
