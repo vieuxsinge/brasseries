@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 from pyquery import PyQuery as pq
+import urllib
+import json
+from geojson import Point
+
+GOOGLE_SERVER_API_KEY = "XXXXXX"
 
 
 class Brasserie(object):
@@ -17,6 +22,9 @@ class Brasserie(object):
         self.website = website
         self.creation_date = creation_date
         self.history = history
+
+    def get_address(self):
+        return u"%s, %s %s" % (self.address, self.postal_code, self.city)
 
 
 class BeerScrapper(object):
@@ -37,12 +45,29 @@ class BeerScrapper(object):
         for col in list(d.find('#table1>tr'))[1:]:
             self.brasseries.append(
                 Brasserie(*[clean_text(c.text_content()) for c in col]))
+        return self.brasseries
+
+
+def geocode(address):
+    url = u"https://maps.googleapis.com/maps/api/geocode/json?address=%s&key=%s" % (address, GOOGLE_SERVER_API_KEY)
+    content = json.loads(urllib.urlopen(url.encode("utf-8")).read())
+    try:
+        lat = content["results"][0]["geometry"]["location"]["lat"]
+        lng = content["results"][0]["geometry"]["location"]["lng"]
+        return Point((lat, lng))
+    except IndexError:
+        return None
 
 
 def render_geojson(brasseries):
     """Converts the list of brasseries into geojson."""
     for brasserie in brasseries:
-        pass
+        point = geocode(brasserie.get_address())
+        if point:
+            print point
+        else:
+            # can't find ...
+            pass
 
 if __name__ == '__main__':
     scrapper = BeerScrapper()
