@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 from pyquery import PyQuery as pq
+import urllib
+import json
+from geojson import Feature, Point, FeatureCollection
 
 
 class Brasserie(object):
@@ -17,6 +20,12 @@ class Brasserie(object):
         self.website = website
         self.creation_date = creation_date
         self.history = history
+
+    def get_address(self):
+        return u"%s, %s %s" % (self.address, self.postal_code, self.city)
+
+    def get_popup_content(self):
+        return u"\n".join([self.get_address(), self.tel, self.website, self.email])
 
 
 class BeerScrapper(object):
@@ -37,12 +46,33 @@ class BeerScrapper(object):
         for col in list(d.find('#table1>tr'))[1:]:
             self.brasseries.append(
                 Brasserie(*[clean_text(c.text_content()) for c in col]))
+        return self.brasseries
+
+
+def geocode(address):
+    url = u"http://nominatim.openstreetmap.org/search/%s?format=json" % address
+    results = json.loads(urllib.urlopen(url.encode("utf-8")).read())
+    if results:
+        lat = float(results[0]["lat"])
+        lng = float(results[0]["lon"])
+        return Point((lat, lng))
+    return None
 
 
 def render_geojson(brasseries):
     """Converts the list of brasseries into geojson."""
+    features = []
     for brasserie in brasseries:
-        pass
+        point = geocode(brasserie.get_address())
+        if point:
+            features.append(Feature(geometry=point, properties={
+                "name": brasserie.name,
+                "description": brasserie.get_popup_content()
+            }))
+        else:
+            # can't find ...
+            pass
+    return FeatureCollection(features)
 
 if __name__ == '__main__':
     scrapper = BeerScrapper()
