@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import codecs
 from pyquery import PyQuery as pq
 import urllib
 import json
@@ -25,7 +26,8 @@ class Brasserie(object):
         return u"%s, %s %s" % (self.address, self.postal_code, self.city)
 
     def get_popup_content(self):
-        return u"\n".join([self.get_address(), self.tel, self.website, self.email])
+        return u"\n".join([self.get_address(), self.tel, self.website,
+                           self.email])
 
 
 class BeerScrapper(object):
@@ -62,6 +64,7 @@ def geocode(address):
 def render_geojson(brasseries):
     """Converts the list of brasseries into geojson."""
     features = []
+    not_found = []
     for brasserie in brasseries:
         point = geocode(brasserie.get_address())
         if point:
@@ -70,10 +73,14 @@ def render_geojson(brasseries):
                 "description": brasserie.get_popup_content()
             }))
         else:
-            # can't find ...
-            pass
-    return FeatureCollection(features)
+            not_found.append(brasserie)
+    return FeatureCollection(features), not_found
 
 if __name__ == '__main__':
     scrapper = BeerScrapper()
-    print render_geojson(scrapper.scrap())
+    features, not_found = render_geojson(scrapper.scrap())
+    with codecs.open('brasseries.geojson', 'w', encoding='utf-8') as f:
+        f.write(features)
+
+    print('impossible de localiser ces brasseries:')
+    print(', '.join([br.get_address() for br in not_found]))
