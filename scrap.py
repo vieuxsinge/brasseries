@@ -1,14 +1,19 @@
 # -*- coding: utf-8 -*-
 import codecs
 from pyquery import PyQuery as pq
+from collections import Counter
+import datetime
 import urllib
 import json
+import arrow
+import geojson
 from geojson import Feature, Point, FeatureCollection
 
 
 class Brasserie(object):
     def __init__(self, name, address, postal_code, city, tel, portable, fax,
-                 email, contact, website, bio, creation_date, history):
+                 email, contact, website, tasted, farm, barley, hops,
+                 malting, bio, food, education, creation_date, history):
         self.name = name
         self.address = address
         self.postal_code = postal_code
@@ -19,7 +24,19 @@ class Brasserie(object):
         self.email = email
         self.contact = contact
         self.website = website
-        self.creation_date = creation_date
+        self.tasted = tasted
+        self.farm = farm
+        self.barley = barley
+        self.hops = hops
+        self.malting = malting
+        self.bio = bio
+        self.food = food
+        self.education = education
+        try:
+            self.creation_date = arrow.get(creation_date,
+                                           ["MMMM YYYY", "YYYY"], locale="fr")
+        except:
+            self.creation_date = None
         self.history = history
 
     def get_address(self):
@@ -76,11 +93,34 @@ def render_geojson(brasseries):
             not_found.append(brasserie)
     return FeatureCollection(features), not_found
 
-if __name__ == '__main__':
-    scrapper = BeerScrapper()
-    features, not_found = render_geojson(scrapper.scrap())
-    with codecs.open('brasseries.geojson', 'w', encoding='utf-8') as f:
-        f.write(features)
+
+def save_to_geojson(scrapped, destination):
+    features, not_found = render_geojson(scrapped)
+    with codecs.open(destination, 'w', encoding='utf-8') as f:
+        geojson.dump(features, f)
 
     print('impossible de localiser ces brasseries:')
     print(', '.join([br.get_address() for br in not_found]))
+
+
+def generate_creation_graph(scrapped, destination):
+    import plotly
+    import plotly.graph_objs as go
+    # We only need the data for the last 20 years, excluding this year.
+    now = datetime.datetime.now()
+    then = now.year - 20
+    creation_by_year = Counter([s.creation_date.year
+                                for s in scrapped if s.creation_date
+                                and then <= s.creation_date.year < now.year])
+    # Sort to get the oldest first.
+    x, y = zip(*sorted(creation_by_year.items()))
+    plotly.offline.plot({
+        "data": [go.Scatter(x=x, y=y, mode='lines')],
+        "layout": go.Layout(title="Création de brasseries par années. Données de http://projet.amertume.free.fr/", )
+    }, filename=destination)
+
+if __name__ == '__main__':
+    scrapper = BeerScrapper()
+    scrapped = scrapper.scrap()
+    generate_creation_graph(scrapped, 'brasseries.html')
+    # save_to_geojson(scrapped, 'brasseries.geojson')
