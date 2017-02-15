@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
-import codecs
-from pyquery import PyQuery as pq
+from __future__ import print_function
 from collections import Counter
+import codecs
 import datetime
-import urllib
 import json
-import arrow
-import geojson
+import sys
+import urllib
+
+from pyquery import PyQuery as pq
 from geojson import Feature, Point, FeatureCollection
+import arrow
+import progressbar
+import geojson
 
 
 class Brasserie(object):
@@ -61,6 +65,7 @@ class BeerScrapper(object):
                        .replace('\t', ''))
             # XXX Need to change encoding.
 
+	print('Loading URL')
         d = pq(url=self.url)
         for col in list(d.find('#table1>tr'))[1:]:
             self.brasseries.append(
@@ -82,12 +87,18 @@ def render_geojson(brasseries):
     """Converts the list of brasseries into geojson."""
     features = []
     not_found = []
-    for brasserie in brasseries:
+    next_year = arrow.now() + datetime.timedelta(days=365)
+    print('Geocoding %s adresses' % len(brasseries))
+    bar = progressbar.ProgressBar()
+    for brasserie in bar(brasseries):
+	sys.stdout.flush()
         point = geocode(brasserie.get_address())
         if point:
             features.append(Feature(geometry=point, properties={
                 "name": brasserie.name,
-                "description": brasserie.get_popup_content()
+                "description": brasserie.get_popup_content(),
+                "start": brasserie.creation_date.isoformat(),
+                "end": next_year.isoformat(),
             }))
         else:
             not_found.append(brasserie)
@@ -120,7 +131,10 @@ def generate_creation_graph(scrapped, destination):
     }, filename=destination)
 
 if __name__ == '__main__':
+    import sys
     scrapper = BeerScrapper()
     scrapped = scrapper.scrap()
-    generate_creation_graph(scrapped, 'brasseries.html')
-    # save_to_geojson(scrapped, 'brasseries.geojson')
+    if len(sys.argv) >= 2 and sys.argv[1] == 'graph':
+        generate_creation_graph(scrapped, 'brasseries.html')
+    else:
+        save_to_geojson(scrapped, 'brasseries.geojson')
