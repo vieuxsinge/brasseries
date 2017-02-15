@@ -1,0 +1,81 @@
+<html>
+  <head>
+    <title>Évolution du nombre de brasseries en activité</title>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <script src="assets/leaflet.js"></script>
+    <script src="assets/leaflet.timeline.min.js"></script>
+
+    <link href="assets/leaflet.css" rel="stylesheet">
+    <link href="assets/leaflet.timeline.min.css" rel="stylesheet">
+
+    <style>
+      html, body{
+        margin: 0;
+        padding: 0;
+      }
+      .time-text {
+	position: fixed;
+	top: 20px;
+        left: 50px;
+        font-size: 3em;
+      }
+      #number-of-breweries {
+	position: fixed;
+	top: 100px;
+        left: 50px;
+        font-size: 3em;
+      }
+      #map{
+        width: 100vw;
+        height: 100vh;
+      }
+      .leaflet-bottom.leaflet-left{
+        width: 100%;
+      }
+      .leaflet-control-container .leaflet-timeline-controls{
+        box-sizing: border-box;
+        width: 100%;
+        margin: 0;
+        margin-bottom: 15px;
+      }
+    </style>
+  </head>
+  <body>
+   
+    <div id="map"></div>
+    <div id="number-of-breweries">Nombre de brasseries en activité</div>
+
+    <script>
+      var count = 0;
+      var osmUrl = 'http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+      var osmAttrib = '&copy; <a href="http://openstreetmap.org/copyright">OpenStreetMap</a> contributors, données de <a href="http://projet.amertume.free.fr/">Emmanuel Gillard (Projet Amertume)</a>';
+      var osm = L.tileLayer(osmUrl, {maxZoom: 18, attribution: osmAttrib});
+      var map = L.map('map', {layers: [osm], center: new L.LatLng(46.6,2.1), zoom: 6});
+
+      function updateNumber(timeline) {
+        count = timeline.getLayers().length;
+        var display = document.getElementById('number-of-breweries');
+        display.innerHTML = count + " brasseries";
+      }
+
+      function onLoadData(data){
+        var timeline = L.timeline(data, {
+          waitToUpdateMap: true
+        });
+        var timelineControl = L.timelineSliderControl({
+          formatOutput: function(date){
+            return "Année " + new Date(date).getFullYear();
+          },
+          enableKeyboardControls: true,
+        });
+        timeline.addTo(map);
+        timelineControl.addTo(map);
+        timelineControl.addTimelines(timeline);
+        timeline.on('change', function(e){
+          updateNumber(e.target);
+        });
+      }
+    </script>
+    <script src="./brasseries.geojson.jsonp"></script>
+  </body>
+</html>
