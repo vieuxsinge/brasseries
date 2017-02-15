@@ -12,6 +12,7 @@ from geojson import Feature, Point, FeatureCollection
 import arrow
 import progressbar
 import geojson
+import geocoder
 
 
 class Brasserie(object):
@@ -40,7 +41,9 @@ class Brasserie(object):
             self.creation_date = arrow.get(creation_date,
                                            ["MMMM YYYY", "YYYY"], locale="fr")
         except:
-            self.creation_date = None
+            # Ceci est faux ! Attention.
+            self.creation_date = arrow.get('Janvier 2016',
+                                           ["MMMM YYYY", "YYYY"], locale="fr")
         self.history = history
 
     def get_address(self):
@@ -74,12 +77,9 @@ class BeerScrapper(object):
 
 
 def geocode(address):
-    url = u"http://nominatim.openstreetmap.org/search/%s?format=json" % address
-    results = json.loads(urllib.urlopen(url.encode("utf-8")).read())
-    if results:
-        lat = float(results[0]["lat"])
-        lng = float(results[0]["lon"])
-        return Point((lng, lat))
+    g = geocoder.google(address)
+    if g.ok:
+        return Point((g.lng, g.lat))
     return None
 
 
@@ -91,7 +91,6 @@ def render_geojson(brasseries):
     print('Geocoding %s adresses' % len(brasseries))
     bar = progressbar.ProgressBar()
     for brasserie in bar(brasseries):
-	sys.stdout.flush()
         point = geocode(brasserie.get_address())
         if point:
             features.append(Feature(geometry=point, properties={
@@ -108,10 +107,11 @@ def render_geojson(brasseries):
 def save_to_geojson(scrapped, destination):
     features, not_found = render_geojson(scrapped)
     with codecs.open(destination, 'w', encoding='utf-8') as f:
+        f.write('onLoadData(');
         geojson.dump(features, f)
+        f.write(');');
 
-    print('impossible de localiser ces brasseries:')
-    print(', '.join([br.get_address() for br in not_found]))
+    print('impossible de localiser %s brasseries.' % len(not_found))
 
 
 def generate_creation_graph(scrapped, destination):
@@ -137,4 +137,4 @@ if __name__ == '__main__':
     if len(sys.argv) >= 2 and sys.argv[1] == 'graph':
         generate_creation_graph(scrapped, 'brasseries.html')
     else:
-        save_to_geojson(scrapped, 'brasseries.geojson')
+        save_to_geojson(scrapped, 'timeline/brasseries.geojson.jsonp')
