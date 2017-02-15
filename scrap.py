@@ -80,7 +80,7 @@ def geocode(address):
     g = geocoder.google(address)
     if g.ok:
         return Point((g.lng, g.lat))
-    return None
+    return Point((0,0))  # Put the unknown breweries somewhere out of the map.
 
 
 def render_geojson(brasseries):
