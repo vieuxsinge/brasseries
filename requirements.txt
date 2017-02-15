@@ -5,3 +5,4 @@ pyquery==1.2.8
 geojson==1.3.3
 arrow
 progressbar
+ghp-import
