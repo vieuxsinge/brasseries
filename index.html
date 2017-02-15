@@ -55,7 +55,7 @@
       function updateNumber(timeline) {
         count = timeline.getLayers().length;
         var display = document.getElementById('number-of-breweries');
-        display.innerHTML = count + " brasseries";
+        display.innerHTML = count + count == 1 ? " brasserie" : " brasseries";
       }
 
       function onLoadData(data){
