@@ -69,12 +69,15 @@
           },
           enableKeyboardControls: true,
         });
-        timeline.addTo(map);
-        timelineControl.addTo(map);
-        timelineControl.addTimelines(timeline);
         timeline.on('change', function(e){
           updateNumber(e.target);
         });
+	timeline.on('layeradd', function(e) {
+	  e.layer.bindPopup(e.layer.feature.properties.name);
+	});
+        timeline.addTo(map);
+        timelineControl.addTo(map);
+        timelineControl.addTimelines(timeline);
       }
     </script>
     <script src="./brasseries.geojson.jsonp"></script>
