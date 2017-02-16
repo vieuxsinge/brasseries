@@ -73,7 +73,9 @@
           updateNumber(e.target);
         });
 	timeline.on('layeradd', function(e) {
-	  e.layer.bindPopup(e.layer.feature.properties.name);
+	  var properties = e.layer.feature.properties;
+	  var creationDate = new Date(properties.start);
+	  e.layer.bindPopup(properties.name + " (" + creationDate.getFullYear() + ")");
 	});
         timeline.addTo(map);
         timelineControl.addTo(map);
