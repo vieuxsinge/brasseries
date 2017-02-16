@@ -87,7 +87,7 @@ def render_geojson(brasseries):
     """Converts the list of brasseries into geojson."""
     features = []
     not_found = []
-    next_year = arrow.now() + datetime.timedelta(days=365)
+    now = arrow.now()
     print('Geocoding %s adresses' % len(brasseries))
     bar = progressbar.ProgressBar()
     for brasserie in bar(brasseries):
@@ -97,7 +97,7 @@ def render_geojson(brasseries):
                 "name": brasserie.name,
                 "description": brasserie.get_popup_content(),
                 "start": brasserie.creation_date.isoformat(),
-                "end": next_year.isoformat(),
+                "end": now.isoformat(),
             }))
         else:
             not_found.append(brasserie)
