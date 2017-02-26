@@ -13,12 +13,18 @@ import arrow
 import progressbar
 import geojson
 import geocoder
+import requests
+
+URL_BRASSERIES_ACTIVES = 'http://projet.amertume.free.fr/html/liste_brasseries.htm'
+URL_BRASSERIES_FERMEES = 'http://projet.amertume.free.fr/html/liste_brasseries_fermees.htm'
 
 
 class Brasserie(object):
     def __init__(self, name, address, postal_code, city, tel, portable, fax,
                  email, contact, website, tasted, farm, barley, hops,
-                 malting, bio, food, education, creation_date, history):
+                 malting, bio, food, education, creation_date, close_date,
+                 history=None, fallback_creation_date=None,
+                 fallback_close_date=None):
         self.name = name
         self.address = address
         self.postal_code = postal_code
@@ -37,29 +43,26 @@ class Brasserie(object):
         self.bio = bio
         self.food = food
         self.education = education
-        try:
-            self.creation_date = arrow.get(creation_date,
-                                           ["MMMM YYYY", "YYYY"], locale="fr")
-        except:
-            # Ceci est faux ! Attention.
-            self.creation_date = arrow.get('Janvier 2016',
-                                           ["MMMM YYYY", "YYYY"], locale="fr")
+
+        self.creation_date = parse_date(creation_date, fallback=fallback_creation_date)
+        if history:
+            self.close_date = parse_date(close_date, fallback=fallback_close_date)
+        else:
+            history = close_date
+            self.close_date = parse_date(fallback_close_date)
         self.history = history
 
-    def get_address(self):
-        return u"%s, %s %s" % (self.address, self.postal_code, self.city)
-
     def get_popup_content(self):
-        return u"\n".join([self.get_address(), self.tel, self.website,
-                           self.email])
+        return u"\n".join([self.tel, self.website, self.email, self.history])
 
 
 class BeerScrapper(object):
 
-    url = 'http://projet.amertume.free.fr/html/liste_brasseries.htm'
-
-    def __init__(self):
-        self.brasseries = []
+    def __init__(self, url, fallback_creation_date=None, fallback_close_date=None):
+        self.url = url
+        self.retrieved = []
+        self.fallback_creation_date = fallback_creation_date
+        self.fallback_close_date = fallback_close_date
 
     def scrap(self):
         """Scrap a page, put the results in the self.tracks attribute."""
@@ -68,39 +71,61 @@ class BeerScrapper(object):
                        .replace('\t', ''))
             # XXX Need to change encoding.
 
-	print('Loading URL')
+	    print('Loading URL %s' % self.url)
         d = pq(url=self.url)
         for col in list(d.find('#table1>tr'))[1:]:
-            self.brasseries.append(
-                Brasserie(*[clean_text(c.text_content()) for c in col]))
-        return self.brasseries
+            self.retrieved.append(
+                Brasserie(*[clean_text(c.text_content()) for c in col],
+                          fallback_creation_date=self.fallback_creation_date,
+                          fallback_close_date=self.fallback_close_date))
+        return self.retrieved
 
 
-def geocode(address):
-    g = geocoder.google(address)
-    if g.ok:
-        return Point((g.lng, g.lat))
-    return Point((0,0))  # Put the unknown breweries somewhere out of the map.
+def parse_date(string, fallback=False):
+    try:
+        parsed = arrow.get(string, ["MMMM YYYY", "YYYY"], locale="fr")
+    except:
+        if fallback:
+            parsed = arrow.get(fallback, ["MMMM YYYY", "YYYY"], locale="fr")
+        else:
+            parsed = None
+    return parsed
+
+
+def geocode(brasserie, session):
+    # return Point((0,0))
+    address = u"%s, %s" % (brasserie.city, brasserie.postal_code)
+    try:
+        g = geocoder.google(address, session=session)
+        if g.ok:
+            return Point((g.lng, g.lat))
+        return None
+    except Exception as e:
+        print(e)
+        return None
 
 
 def render_geojson(brasseries):
     """Converts the list of brasseries into geojson."""
     features = []
     not_found = []
-    now = arrow.now()
     print('Geocoding %s adresses' % len(brasseries))
     bar = progressbar.ProgressBar()
-    for brasserie in bar(brasseries):
-        point = geocode(brasserie.get_address())
-        if point:
-            features.append(Feature(geometry=point, properties={
-                "name": brasserie.name,
-                "description": brasserie.get_popup_content(),
-                "start": brasserie.creation_date.isoformat(),
-                "end": now.isoformat(),
-            }))
-        else:
-            not_found.append(brasserie)
+    with requests.Session() as session:
+        for brasserie in bar(brasseries):
+            point = geocode(brasserie, session)
+            if point:
+                features.append(Feature(geometry=point, properties={
+                    "name": brasserie.name,
+                    "tel": brasserie.tel,
+                    "website": brasserie.website,
+                    "email": brasserie.email,
+                    "history": brasserie.history,
+                    "start": brasserie.creation_date.isoformat(),
+                    "end": brasserie.close_date.isoformat(),
+                }))
+            else:
+                not_found.append(brasserie)
     return FeatureCollection(features), not_found
 
 
@@ -112,6 +137,11 @@ def save_to_geojson(scrapped, destination):
         f.write(');');
 
     print('impossible de localiser %s brasseries.' % len(not_found))
+
+
+def has_start_and_end(brewery):
+    """Return only closed breweries when we know the creation and close date"""
+    return brewery.creation_date is not None and brewery.close_date is not None
 
 
 def generate_creation_graph(scrapped, destination):
@@ -132,9 +162,14 @@ def generate_creation_graph(scrapped, destination):
 
 if __name__ == '__main__':
     import sys
-    scrapper = BeerScrapper()
-    scrapped = scrapper.scrap()
+    closed_scrapper = BeerScrapper(URL_BRASSERIES_FERMEES)
+    closed_scrapper.scrap()
+    closed_breweries = filter(has_start_and_end, closed_scrapper.retrieved)
+
+    active_scrapper = BeerScrapper(URL_BRASSERIES_ACTIVES, fallback_creation_date='Janvier 2016', fallback_close_date='Novembre 2017')
+    active_scrapper.scrap()
+
     if len(sys.argv) >= 2 and sys.argv[1] == 'graph':
         generate_creation_graph(scrapped, 'brasseries.html')
     else:
-        save_to_geojson(scrapped, 'timeline/brasseries.geojson.jsonp')
+        save_to_geojson(active_scrapper.retrieved + closed_breweries, 'timeline/brasseries.geojson.jsonp')
