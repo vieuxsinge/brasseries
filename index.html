@@ -88,6 +88,7 @@ var timeline = L.timeline(data, {
   waitToUpdateMap: true
 });
 var timelineControl = L.timelineSliderControl({
+  start: "1995",
   formatOutput: function(date){
     return "Année " + new Date(date).getFullYear();
   },
