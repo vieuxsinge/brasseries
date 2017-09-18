@@ -60,6 +60,7 @@
     <h1><a href="https://www.vieuxsinge.com/">La Brasserie du Vieux Singe</a></h1>
     <nav id="nav">
       <ul>
+                <li>Liste non exhaustive, basée sur les données du projet amertume</li>
                 <li>
                   <a href="https://www.vieuxsinge.com/archives.html">blog</a>
                 </li>
@@ -88,6 +89,7 @@ var timeline = L.timeline(data, {
   waitToUpdateMap: true
 });
 var timelineControl = L.timelineSliderControl({
+  start: new Date("2010"),
   formatOutput: function(date){
     return "Année " + new Date(date).getFullYear();
   },

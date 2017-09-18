@@ -167,7 +167,7 @@ if __name__ == '__main__':
     closed_breweries = filter(has_start_and_end, closed_scrapper.retrieved)
 
     active_scrapper = BeerScrapper(URL_BRASSERIES_ACTIVES, fallback_creation_date='Janvier 2016', fallback_close_date='Novembre 2017')
-    active_scrapper.scrap()
+    scrapped = active_scrapper.scrap()
 
     if len(sys.argv) >= 2 and sys.argv[1] == 'graph':
         generate_creation_graph(scrapped, 'brasseries.html')
