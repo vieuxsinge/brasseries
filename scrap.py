@@ -6,6 +6,7 @@ import datetime
 import json
 import sys
 import urllib
+import pickle
 
 from pyquery import PyQuery as pq
 from geojson import Feature, Point, FeatureCollection
@@ -20,20 +21,15 @@ URL_BRASSERIES_FERMEES = 'http://projet.amertume.free.fr/html/liste_brasseries_f
 
 
 class Brasserie(object):
-    def __init__(self, name, address, postal_code, city, tel, portable, fax,
-                 email, contact, website, tasted, farm, barley, hops,
+    def __init__(self, name, address, postal_code, city, website, tasted, farm, barley, hops,
                  malting, bio, food, education, creation_date, close_date,
                  history=None, fallback_creation_date=None,
                  fallback_close_date=None):
         self.name = name
         self.address = address
         self.postal_code = postal_code
+        self.region_code = postal_code[0:2] 
         self.city = city
-        self.tel = tel
-        self.portable = portable
-        self.fax = fax
-        self.email = email
-        self.contact = contact
         self.website = website
         self.tasted = tasted
         self.farm = farm
@@ -43,6 +39,7 @@ class Brasserie(object):
         self.bio = bio
         self.food = food
         self.education = education
+        self.longlat = (None, None)
 
         self.creation_date = parse_date(creation_date, fallback=fallback_creation_date)
         if history:
@@ -98,50 +95,58 @@ def geocode(brasserie, session):
     try:
         g = geocoder.google(address, session=session)
         if g.ok:
-            return Point((g.lng, g.lat))
+            return (g.lng, g.lat)
         return None
     except Exception as e:
         print(e)
         return None
 
 
-def render_geojson(brasseries):
-    """Converts the list of brasseries into geojson."""
-    features = []
+def geocode_brasseries(brasseries):
     not_found = []
-    print('Geocoding %s adresses' % len(brasseries))
     bar = progressbar.ProgressBar()
     with requests.Session() as session:
         for brasserie in bar(brasseries):
-            point = geocode(brasserie, session)
-            if point:
-                features.append(Feature(geometry=point, properties={
-                    "name": brasserie.name,
-                    "tel": brasserie.tel,
-                    "website": brasserie.website,
-                    "email": brasserie.email,
-                    "history": brasserie.history,
-                    "start": brasserie.creation_date.isoformat(),
-                    "end": brasserie.close_date.isoformat(),
-                }))
-            else:
+            longlat = geocode(brasserie, session)
+            brasserie.longlat = longlat
+            if not longlat:
                 not_found.append(brasserie)
-    return FeatureCollection(features), not_found
+    return brasseries, not_found
+
+
+def render_geojson(brasseries):
+    """Converts the list of brasseries into geojson."""
+    features = []
+    for brasserie in brasseries:
+        if brasserie.longlat:
+            features.append(Feature(geometry=Point(brasserie.longlat), properties={
+                "name": brasserie.name,
+                "website": brasserie.website,
+                "history": brasserie.history,
+                "start": brasserie.creation_date.isoformat(),
+                "end": brasserie.close_date.isoformat(),
+            }))
+    return FeatureCollection(features)
 
 
 def save_to_geojson(scrapped, destination):
-    features, not_found = render_geojson(scrapped)
+    features = render_geojson(scrapped)
     with codecs.open(destination, 'w', encoding='utf-8') as f:
         f.write('onLoadData(');
         geojson.dump(features, f)
         f.write(');');
 
-    print('impossible de localiser %s brasseries.' % len(not_found))
-
 
 def has_start_and_end(brewery):
     """Return only closed breweries when we know the creation and close date"""
     return brewery.creation_date is not None and brewery.close_date is not None
+
+
+def enhance_data(data, extra_info):
+    for feature in data['features']:
+        region_code = feature['properties']['code']
+        feature['properties']['breweries'] = extra_info.get(region_code, 0)
+    return data
 
 
 def generate_creation_graph(scrapped, destination):
@@ -161,15 +166,31 @@ def generate_creation_graph(scrapped, destination):
     }, filename=destination)
 
 if __name__ == '__main__':
-    import sys
-    closed_scrapper = BeerScrapper(URL_BRASSERIES_FERMEES)
-    closed_scrapper.scrap()
-    closed_breweries = filter(has_start_and_end, closed_scrapper.retrieved)
-
-    active_scrapper = BeerScrapper(URL_BRASSERIES_ACTIVES, fallback_creation_date='Janvier 2016', fallback_close_date='Novembre 2017')
-    scrapped = active_scrapper.scrap()
-
-    if len(sys.argv) >= 2 and sys.argv[1] == 'graph':
-        generate_creation_graph(scrapped, 'brasseries.html')
+    if len(sys.argv) >= 2 and sys.argv[1] == 'pickle':
+        with open('data.json', 'r') as f:
+            brasseries = pickle.load(f)
     else:
-        save_to_geojson(active_scrapper.retrieved + closed_breweries, 'timeline/brasseries.geojson.jsonp')
+        closed_scrapper = BeerScrapper(URL_BRASSERIES_FERMEES)
+        closed_scrapper.scrap()
+        closed_breweries = filter(has_start_and_end, closed_scrapper.retrieved)
+
+        active_scrapper = BeerScrapper(URL_BRASSERIES_ACTIVES, fallback_creation_date='Janvier 2016', fallback_close_date='Novembre 2017')
+        scrapped = active_scrapper.scrap()
+
+        if len(sys.argv) >= 2 and sys.argv[1] == 'graph':
+            generate_creation_graph(scrapped, 'brasseries.html')
+        elif len(sys.argv) >= 2 and sys.argv[1] == 'departements':
+            # Count the breweries by region
+            by_departements = Counter([b.region_code for b in active_scrapper.retrieved])
+            with open('data/departements.geojson') as f:
+                departements = json.load(f)
+            data = enhance_data(departements, by_departements)
+            with open('choropleth/generated.geojson', 'w+') as f:
+                f.write("var brasseriesData = " + json.dumps(data) + ";");
+        else:
+            brasseries, not_found = geocode_brasseries(active_scrapper.retrieved)
+            print('%s brasseries sont impossibles à geolocaliser' % len(not_found))
+            with open('data.json', 'w+') as f:
+                f.write(pickle.dumps(brasseries))
+            # save_to_geojson(active_scrapper.retrieved + closed_breweries, 'timeline/brasseries.geojson.jsonp')
+            save_to_geojson(brasseries, 'data.geojson')
