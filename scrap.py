@@ -160,7 +160,7 @@ def enhance_data(data, breweries, population):
             print("missing data for region", region_code)
         if region_code == '971':
             from pdb import set_trace; set_trace()
-        feature['properties']['breweries_per_capita'] = round((breweries_ * 100000.0 / population_), 2)
+        feature['properties']['breweries_per_capita'] = round((breweries_ * 1000000.0 / population_), 2)
     return data
 
 def accumulate(iterable, func=operator.add):
