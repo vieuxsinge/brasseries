@@ -7,6 +7,8 @@ import json
 import sys
 import urllib
 import pickle
+import operator
+import os.path
 
 from pyquery import PyQuery as pq
 from geojson import Feature, Point, FeatureCollection
@@ -28,7 +30,11 @@ class Brasserie(object):
         self.name = name
         self.address = address
         self.postal_code = postal_code
-        self.region_code = postal_code[0:2] 
+        if postal_code.startswith("98") or postal_code.startswith("97"):
+            region_code = postal_code[0:3]
+        else:
+            region_code = postal_code[0:2]
+        self.region_code = region_code
         self.city = city
         self.website = website
         self.tasted = tasted
@@ -142,12 +148,28 @@ def has_start_and_end(brewery):
     return brewery.creation_date is not None and brewery.close_date is not None
 
 
-def enhance_data(data, extra_info):
+def enhance_data(data, breweries, population):
     for feature in data['features']:
         region_code = feature['properties']['code']
-        feature['properties']['breweries'] = extra_info.get(region_code, 0)
+        population_ = int(population.get(region_code, 0))
+        breweries_ = int(breweries.get(region_code, 0))
+
+        feature['properties']['breweries'] = breweries_
+        feature['properties']['population'] = population_
+        if population_ == 0:
+            print("missing data for region", region_code)
+        if region_code == '971':
+            from pdb import set_trace; set_trace()
+        feature['properties']['breweries_per_capita'] = round((breweries_ * 100000.0 / population_), 2)
     return data
 
+def accumulate(iterable, func=operator.add):
+    it = iter(iterable)
+    total = next(it)
+    yield total
+    for element in it:
+        total = func(total, element)
+        yield total
 
 def generate_creation_graph(scrapped, destination):
     import plotly
@@ -157,40 +179,45 @@ def generate_creation_graph(scrapped, destination):
     then = now.year - 20
     creation_by_year = Counter([s.creation_date.year
                                 for s in scrapped if s.creation_date
-                                and then <= s.creation_date.year < now.year])
+                                and then <= s.creation_date.year <= now.year])
     # Sort to get the oldest first.
     x, y = zip(*sorted(creation_by_year.items()))
+    from pdb import set_trace; set_trace();
+    # Accumulate the number of breweries per year
     plotly.offline.plot({
-        "data": [go.Scatter(x=x, y=y, mode='lines')],
+        "data": [go.Scatter(x=x, y=list(accumulate(y)), mode='lines')],
         "layout": go.Layout(title="Création de brasseries par années. Données de http://projet.amertume.free.fr/", )
     }, filename=destination)
 
 if __name__ == '__main__':
-    if len(sys.argv) >= 2 and sys.argv[1] == 'pickle':
-        with open('data.json', 'r') as f:
-            brasseries = pickle.load(f)
-    else:
-        closed_scrapper = BeerScrapper(URL_BRASSERIES_FERMEES)
-        closed_scrapper.scrap()
-        closed_breweries = filter(has_start_and_end, closed_scrapper.retrieved)
+    closed_scrapper = BeerScrapper(URL_BRASSERIES_FERMEES)
+    closed_scrapper.scrap()
+    closed_breweries = filter(has_start_and_end, closed_scrapper.retrieved)
 
-        active_scrapper = BeerScrapper(URL_BRASSERIES_ACTIVES, fallback_creation_date='Janvier 2016', fallback_close_date='Novembre 2017')
-        scrapped = active_scrapper.scrap()
+    active_scrapper = BeerScrapper(URL_BRASSERIES_ACTIVES, fallback_creation_date='Janvier 2016', fallback_close_date='Decembre 2018')
+    scrapped = active_scrapper.scrap()
 
-        if len(sys.argv) >= 2 and sys.argv[1] == 'graph':
-            generate_creation_graph(scrapped, 'brasseries.html')
-        elif len(sys.argv) >= 2 and sys.argv[1] == 'departements':
-            # Count the breweries by region
-            by_departements = Counter([b.region_code for b in active_scrapper.retrieved])
-            with open('data/departements.geojson') as f:
-                departements = json.load(f)
-            data = enhance_data(departements, by_departements)
-            with open('choropleth/generated.geojson', 'w+') as f:
-                f.write("var brasseriesData = " + json.dumps(data) + ";");
-        else:
-            brasseries, not_found = geocode_brasseries(active_scrapper.retrieved)
-            print('%s brasseries sont impossibles à geolocaliser' % len(not_found))
-            with open('data.json', 'w+') as f:
-                f.write(pickle.dumps(brasseries))
-            # save_to_geojson(active_scrapper.retrieved + closed_breweries, 'timeline/brasseries.geojson.jsonp')
-            save_to_geojson(brasseries, 'data.geojson')
+    if len(sys.argv) >= 2 and sys.argv[1] == 'graph':
+        generate_creation_graph(scrapped, 'app/graph.html')
+
+    elif len(sys.argv) >= 2 and sys.argv[1] == 'departements':
+        # Count the breweries by region
+        by_departements = Counter([b.region_code for b in active_scrapper.retrieved])
+        with open('data/departements.geojson') as f:
+            departements = json.load(f)
+        with open('data/population.json') as f:
+            population = json.load(f)
+        data = enhance_data(departements, by_departements, population)
+        with open('app/data/breweries_per_department.js', 'w+') as f:
+            f.write("var brasseriesData = " + json.dumps(data) + ";");
+
+    elif len(sys.argv) >= 2 and sys.argv[1] == 'timeline':
+        if (os.path.exists('pickle.json')):
+            with open('pickle.json', 'r') as f:
+                brasseries = pickle.load(f)
+        brasseries, not_found = geocode_brasseries(active_scrapper.retrieved)
+        print('%s brasseries sont impossibles à geolocaliser' % len(not_found))
+        with open('pickle.json', 'w+') as f:
+            f.write(pickle.dumps(brasseries))
+        # save_to_geojson(active_scrapper.retrieved + closed_breweries, 'timeline/brasseries.geojson.jsonp')
+        save_to_geojson(brasseries, 'app/data/geocoded_breweries.geojson.jsonp')
