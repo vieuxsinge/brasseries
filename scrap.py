@@ -73,8 +73,8 @@ class BeerScrapper(object):
             return (txt.replace('\n', '')
                        .replace('\t', ''))
             # XXX Need to change encoding.
-
-	    print('Loading URL %s' % self.url)
+        
+        print('Loading URL %s' % self.url)
         d = pq(url=self.url)
         for col in list(d.find('#table1>tr'))[1:]:
             self.retrieved.append(
